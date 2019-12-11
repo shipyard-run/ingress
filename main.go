@@ -1,17 +1,19 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/hashicorp/go-hclog"
 )
 
-var portHost = flag.Int("port-host", -1, "Specify the port to expose on the host machine")
-var portRemote = flag.Int("port-remote", -1, "Specify the port where the service is listening on the remote service")
-var serviceName = flag.String("service-name", "", "FQDN of the service in the docker or k8s network")
+var ports = flag.StringSlice("ports", nil, "Specify the ports to forward [Local]:[Remote] 8081:8080")
+var serviceName = flag.String("service-name", "", "FQDN of the service in the Docker network or Kubernetes pod/service")
+var proxyType = flag.String("proxy-type", "docker", "Type of proxy to use [docker | kubernetes]")
 
 func main() {
 	flag.Parse()
@@ -20,18 +22,33 @@ func main() {
 
 	log.Info("Starting Ingress")
 
-	err := createNetCat(*serviceName, *portHost, *portRemote, log)
+	p, err := splitPorts(*ports)
+	if err != nil {
+		log.Error("Error parsing parameters", "error", err)
+		os.Exit(1)
+	}
+
+	if *proxyType == "docker" {
+		err = createNetCat(*serviceName, p, log)
+	} else {
+		err = createKubeProxy(*serviceName, p, log)
+	}
+
 	if err != nil {
 		log.Error("Error creating connection", "error", err)
 		os.Exit(1)
 	}
 }
 
-func createNetCat(service string, portRemote, portHost int, log hclog.Logger) error {
+func createNetCat(service string, ports [][]string, log hclog.Logger) error {
+	if len(ports) != 1 {
+		return fmt.Errorf("Please specify a single port mapping for Docker proxies")
+	}
+
 	c := exec.Command(
 		"socat",
-		fmt.Sprintf("tcp-l:%d,fork,reuseaddr", portHost),
-		fmt.Sprintf("tcp:%s:%d", service, portRemote),
+		fmt.Sprintf("tcp-l:%s,fork,reuseaddr", ports[0][0]),
+		fmt.Sprintf("tcp:%s:%s", service, ports[0][1]),
 	)
 
 	// set the standard out and error to the logger
@@ -39,4 +56,45 @@ func createNetCat(service string, portRemote, portHost int, log hclog.Logger) er
 	c.Stderr = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
 
 	return c.Run()
+}
+
+func createKubeProxy(service string, ports [][]string, log hclog.Logger) error {
+	if len(ports) < 1 {
+		return fmt.Errorf("Please specify at least 1 port mapping for Kubernetes proxies")
+	}
+
+	args := []string{
+		"port-forward",
+		service,
+	}
+
+	for _, p := range ports {
+		args = append(args, fmt.Sprintf("%s:%s", p[0], p[1]))
+	}
+
+	c := exec.Command(
+		"kubectl",
+		args...,
+	)
+
+	// set the standard out and error to the logger
+	c.Stdout = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
+	c.Stderr = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
+
+	return c.Run()
+}
+
+func splitPorts(ports []string) ([][]string, error) {
+	rp := [][]string{}
+
+	for _, p := range ports {
+		pp := strings.Split(p, ":")
+		if len(pp) != 2 {
+			return nil, fmt.Errorf("Error ports should be specified as a : separated string [local]:[remote]")
+		}
+
+		rp = append(rp, pp)
+	}
+
+	return rp, nil
 }

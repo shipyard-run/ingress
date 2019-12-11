@@ -1,5 +1,7 @@
 build_docker:
-	docker build -t docker.pkg.github.com/shipyard-run/ingress/ingress:latest .
+	docker build -t shipyardrun/ingress:latest .
 
 push_docker:
-	docker push docker.pkg.github.com/shipyard-run/ingress/ingress:latest
+	docker push shipyardrun/ingress:latest
+
+build_and_push_docker: build_docker push_docker
