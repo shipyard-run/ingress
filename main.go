@@ -66,6 +66,8 @@ func createKubeProxy(service string, ports [][]string, log hclog.Logger) error {
 	args := []string{
 		"port-forward",
 		service,
+		"--address",
+		"0.0.0.0",
 	}
 
 	for _, p := range ports {
