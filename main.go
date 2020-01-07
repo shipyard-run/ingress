@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 	"os"
 	"os/exec"
 	"strings"
@@ -28,15 +29,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *proxyType == "docker" {
-		err = createNetCat(*serviceName, p, log)
-	} else {
-		err = createKubeProxy(*serviceName, p, log)
-	}
+	for {
+		if *proxyType == "docker" {
+			err = createNetCat(*serviceName, p, log)
+		} else {
+			// loop to keep this alive
+			err = createKubeProxy(*serviceName, p, log)
+		}
 
-	if err != nil {
-		log.Error("Error creating connection", "error", err)
-		os.Exit(1)
+		if err != nil {
+			log.Error("Error creating connection, retrying", "error", err)
+			time.Sleep(2*time.Second)
+		}
 	}
 }
 
@@ -80,10 +84,43 @@ func createKubeProxy(service string, ports [][]string, log hclog.Logger) error {
 	)
 
 	// set the standard out and error to the logger
-	c.Stdout = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
-	c.Stderr = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
+	errorChan := make(chan error)
+	doneChan := make(chan error)
+	c.Stdout = &HijackWriter{log, nil}
+	c.Stderr = &HijackWriter{log.Named("error_log"), errorChan}
 
-	return c.Run()
+
+	go func() {
+		doneChan <- c.Run()
+	}()
+
+	select {
+	case err := <-doneChan:
+		return err
+	case err := <-errorChan:
+		// kill the run process and exit
+		c.Process.Kill()
+		return err
+	}
+
+	return nil
+}
+
+// HijackWriter is a simple writer which brodcasts to a channel when a log message is called
+type HijackWriter struct {
+	log hclog.Logger
+	notifyChan chan error
+}
+
+func (h*HijackWriter) Write(p []byte) (n int, err error)  {
+	h.log.Info(string(p))
+
+	// notify that we have logged a message
+	if h.notifyChan != nil {
+		h.notifyChan <- fmt.Errorf("%s", p)
+	}
+
+	return len(p), nil
 }
 
 func splitPorts(ports []string) ([][]string, error) {
