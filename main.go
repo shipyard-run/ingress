@@ -15,6 +15,7 @@ import (
 var ports = flag.StringSlice("ports", nil, "Specify the ports to forward [Local]:[Remote] 8081:8080")
 var serviceName = flag.String("service-name", "", "FQDN of the service in the Docker network or Kubernetes pod/service")
 var proxyType = flag.String("proxy-type", "docker", "Type of proxy to use [docker | kubernetes]")
+var namespace = flag.String("namespace", "default", "Namespace for Kubernetes services")
 
 func main() {
 	flag.Parse()
@@ -69,6 +70,8 @@ func createKubeProxy(service string, ports [][]string, log hclog.Logger) error {
 
 	args := []string{
 		"port-forward",
+		"-n",
+		*namespace,
 		service,
 		"--address",
 		"0.0.0.0",
