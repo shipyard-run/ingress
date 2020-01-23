@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"time"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -40,27 +40,31 @@ func main() {
 
 		if err != nil {
 			log.Error("Error creating connection, retrying", "error", err)
-			time.Sleep(2*time.Second)
+			time.Sleep(2 * time.Second)
 		}
 	}
 }
 
 func createNetCat(service string, ports [][]string, log hclog.Logger) error {
-	if len(ports) != 1 {
-		return fmt.Errorf("Please specify a single port mapping for Docker proxies")
+	errChan := make(chan error)
+
+	for _, p := range ports {
+		c := exec.Command(
+			"socat",
+			fmt.Sprintf("tcp-l:%s,fork,reuseaddr", p[0]),
+			fmt.Sprintf("tcp:%s:%s", service, p[1]),
+		)
+
+		// set the standard out and error to the logger
+		c.Stdout = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
+		c.Stderr = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
+
+		go func() {
+			errChan <- c.Run()
+		}()
 	}
 
-	c := exec.Command(
-		"socat",
-		fmt.Sprintf("tcp-l:%s,fork,reuseaddr", ports[0][0]),
-		fmt.Sprintf("tcp:%s:%s", service, ports[0][1]),
-	)
-
-	// set the standard out and error to the logger
-	c.Stdout = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
-	c.Stderr = log.StandardWriter(&hclog.StandardLoggerOptions{InferLevels: true})
-
-	return c.Run()
+	return <-errChan
 }
 
 func createKubeProxy(service string, ports [][]string, log hclog.Logger) error {
@@ -92,7 +96,6 @@ func createKubeProxy(service string, ports [][]string, log hclog.Logger) error {
 	c.Stdout = &HijackWriter{log, nil}
 	c.Stderr = &HijackWriter{log.Named("error_log"), errorChan}
 
-
 	go func() {
 		doneChan <- c.Run()
 	}()
@@ -111,11 +114,11 @@ func createKubeProxy(service string, ports [][]string, log hclog.Logger) error {
 
 // HijackWriter is a simple writer which brodcasts to a channel when a log message is called
 type HijackWriter struct {
-	log hclog.Logger
+	log        hclog.Logger
 	notifyChan chan error
 }
 
-func (h*HijackWriter) Write(p []byte) (n int, err error)  {
+func (h *HijackWriter) Write(p []byte) (n int, err error) {
 	h.log.Info(string(p))
 
 	// notify that we have logged a message
