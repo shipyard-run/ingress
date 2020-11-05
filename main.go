@@ -133,7 +133,7 @@ func createNomadProxy(service string, configlocation string, ports [][]string, l
 	http := clients.NewHTTP(2*time.Second, log)
 	client := clients.NewNomad(http, 2*time.Second, log)
 
-	err := client.SetConfig(configlocation)
+	err := client.SetConfig(configlocation, string(clients.RemoteContext))
 	if err != nil {
 		return fmt.Errorf("Unable to set nomad config: %s", err)
 	}
