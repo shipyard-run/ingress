@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shipyard-run/shipyard/pkg/clients"
+	"github.com/shipyard-run/shipyard/pkg/utils"
 	flag "github.com/spf13/pflag"
 
 	"github.com/hashicorp/go-hclog"
@@ -128,12 +129,19 @@ func createNomadProxy(service string, configlocation string, ports [][]string, l
 		return fmt.Errorf("Service should be specified as job.group.task, got: %s", service)
 	}
 
+	// load the config
+	cc := utils.ClusterConfig{}
+	err := cc.Load(configlocation)
+	if err != nil {
+		return fmt.Errorf("Unable to load configuration: %s", err)
+	}
+
 	// lookup the endpoints
 	log.Info("Querying endpoints in Nomad server using", "config", configlocation)
 	http := clients.NewHTTP(2*time.Second, log)
 	client := clients.NewNomad(http, 2*time.Second, log)
 
-	err := client.SetConfig(configlocation, string(clients.RemoteContext))
+	err = client.SetConfig(cc, string(utils.RemoteContext))
 	if err != nil {
 		return fmt.Errorf("Unable to set nomad config: %s", err)
 	}
