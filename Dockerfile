@@ -1,4 +1,4 @@
-FROM golang:latest
+FROM golang:latest as build
 
 COPY . /go/src/github.com/shipyard-run/ingress
 
@@ -6,15 +6,25 @@ WORKDIR /go/src/github.com/shipyard-run/ingress
 
 RUN CGO_ENABLED=0 go build -o bin/ingress main.go
 
-FROM alpine:latest
+FROM alpine:latest as base
 
 RUN apk add -u socat curl
 
-# Install Kubectl
-RUN curl -sLO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl && \
-  chmod +x ./kubectl && \
-  mv ./kubectl /usr/local/bin
+ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+ARG BUILDPLATFORM
+ARG BUILDARCH
 
-COPY --from=0 /go/src/github.com/shipyard-run/ingress/bin/ingress /usr/local/bin/ingress
+RUN echo "I am running on $BUILDPLATFORM, building for $TARGETPLATFORM $TARGETARCH $TARGETVARIANT"  
+
+COPY --from=build /go/src/github.com/shipyard-run/ingress/bin/ingress /usr/local/bin/ingress
+
+# Install Kubectl
+RUN curl -sLO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/$TARGETPLATFORM/kubectl && \
+  chmod +x ./kubectl && \
+ 
+mv ./kubectl /usr/local/bin
 
 ENTRYPOINT [ "ingress" ]
