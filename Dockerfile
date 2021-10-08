@@ -22,7 +22,7 @@ RUN echo "I am running on $BUILDPLATFORM, building for $TARGETPLATFORM $TARGETAR
 COPY --from=build /go/src/github.com/shipyard-run/ingress/bin/ingress /usr/local/bin/ingress
 
 # Install Kubectl
-RUN curl -sLO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/$TARGETPLATFORM/kubectl && \
+RUN curl -sLO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/${TARGETPLATFORM}/kubectl && \
   chmod +x ./kubectl && \
  
 mv ./kubectl /usr/local/bin
